@@ -23,14 +23,12 @@ def connect_to_endpoint(url, params):
         df_tweets = df_tweets.append(pd.json_normalize(response, record_path=['data']))
         df_places = df_places.append(pd.json_normalize(response, record_path=[['includes', 'places']]))
         if ('next_token' in response['meta']):
-            # time.sleep(1)
+            time.sleep(1)
             params['next_token'] = response['meta']['next_token']
             connect_to_endpoint(url, params)
 
     except Exception as e:
         print(response)
-        # status =  'Error has occured! Error code : ' + str(response['status']) + ', Error descr is ' + response['title']
-        # print(status)
 
     return df_tweets, df_places
 
