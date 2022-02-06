@@ -27,8 +27,9 @@ def connect_to_endpoint(url, params):
             params['next_token'] = response['meta']['next_token']
             connect_to_endpoint(url, params)
 
+
     except Exception as e:
-        print(response)
+        print('Error has occured! Error code : ' + str(response['status']) + ', Error descr is ' + response['title'])
 
     return df_tweets, df_places
 

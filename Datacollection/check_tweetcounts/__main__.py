@@ -18,13 +18,19 @@ def bearer_oauth(r):
 
 
 def connect_to_endpoint(url, params):
-    response = requests.get(url, auth=bearer_oauth, params=params).json()
-    if 'next_token' in response['meta']:
-        next_token = query_params['next_token'] = response['meta']['next_token']
-    else:
-        next_token = None
+    try:
+        response = requests.get(url, auth=bearer_oauth, params=params).json()
+        global tweet_count
+        tweet_count = tweet_count + response['meta']['total_tweet_count']
+        if ('next_token' in response['meta']):
+            # time.sleep(1)
+            params['next_token'] = response['meta']['next_token']
+            connect_to_endpoint(url, params)
 
-    return response
+    except Exception as e:
+        print('Error has occured! Error code : ' + str(response['status']) + ', Error descr is ' + response['title'])
+
+    return tweet_count
 
 
 if __name__ == "__main__":
@@ -38,14 +44,7 @@ if __name__ == "__main__":
     search_url = "https://api.twitter.com/2/tweets/counts/all"
     next_token = ''
     tweet_count = 0
-    bearer_token = 'AAAAAAAAAAAAAAAAAAAAAPIEYwEAAAAAfxb4aUzNobtohOlq01OjM6t9O20%3DS0i50a1d7M2r7uJOWu20IlX9YODRoQCUNQ4xx97rGo0wtvKsuF'
 
-    json_response = connect_to_endpoint(search_url, query_params)
-    tweet_count = tweet_count + json_response['meta']['total_tweet_count']
-
-    while ('next_token' in json_response['meta']):
-        time.sleep(1)
-        json_response = connect_to_endpoint(search_url, query_params)
-        tweet_count = tweet_count + json_response['meta']['total_tweet_count']
+    tweet_count = connect_to_endpoint(search_url, query_params)
 
     print('Total tweets for the given query is ', tweet_count)
