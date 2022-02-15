@@ -22,5 +22,4 @@ keywords = ['lyme disease', 'lymedisease', 'neuro', 'long-haul', 'long haul', 'h
 
 if __name__ == "__main__":
     for i in [str(a) for a in range(2010, 2022)]:
-        df = pd.read_csv(f'data/us_county/{i}_county.csv', lineterminator='\n')
-        # print(len(df))
+        get_county_data(i)
