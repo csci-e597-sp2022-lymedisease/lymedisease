@@ -105,3 +105,4 @@ venv.bak/
 .mypy_cache/
 
 .idea
+/data/us_county.csv
