@@ -11,6 +11,7 @@ pytest-cov = "*"
 requests = "*"
 pandas = "*"
 python-dotenv = "*"
+carmen = "*"
 
 #[requires]
 #python_version = "3.7"
