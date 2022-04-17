@@ -1,0 +1,113 @@
+---
+title: "TweetSurv"
+output: html_document
+date: '2022-04-17'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r installlibs}
+
+#install.packages("surveillance")
+
+#library(surveillance)
+
+
+```
+
+
+```{r tweetdata}
+
+month = 1:120
+colnames = c("Twitter")
+#colnames = c("Twitter", "CDC")
+
+d = sample(1:50, 120, replace=TRUE)
+
+observed = matrix(data = d, nrow = 120, ncol = 1, dimnames = list(NULL, colnames))
+
+observed
+
+state = matrix(0, 120, 1, dimnames = list(NULL, colnames))
+
+head(state)
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r sts, echo=FALSE}
+
+dfDisprog = create.disProg(month, observed, state, start=c(2010,1), freq=12)
+dfDisprog
+
+twtr <- disProg2sts(dfDisprog)
+
+twtr
+
+```
+```{r plots}
+
+#getOption("SweaveHooks")[["fig"]]()
+
+plot(twtr, type = observed ~ time | unit, same.scale = FALSE, col = "grey")
+
+
+
+```
+
+```{r hhh4 poisson}
+
+( f_S1 <- addSeason2formula(f = ~ 1, S = 1, period = 12) )
+# fit the Poisson model
+result0 <- hhh4(twtr, control = list(end = list(f = f_S1),
+                                        family = "Poisson"))
+summary(result0)
+
+
+
+```
+
+```{r hhh4 negBinomial}
+
+result1 <- update(result0, family = "NegBin1")
+summary(result1)
+
+#AIC(result0, result1)
+
+
+
+```
+```{r autogressive}
+
+result2 <- update(result1, ar = list(f = ~ 1))
+
+summary(result2)
+
+AIC(result0, result1, result2)
+
+
+coef(result2, se = TRUE,    # also return standard errors
+     amplitudeShift = TRUE, # transform sine/cosine coefficients
+                            # to amplitude/shift parameters
+     idx2Exp = TRUE)
+
+```
+
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
