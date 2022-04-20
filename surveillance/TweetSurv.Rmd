@@ -105,6 +105,9 @@ coef(result2, se = TRUE,    # also return standard errors
                             # to amplitude/shift parameters
      idx2Exp = TRUE)
 
+plot(result2)
+
+
 ```
 
 
