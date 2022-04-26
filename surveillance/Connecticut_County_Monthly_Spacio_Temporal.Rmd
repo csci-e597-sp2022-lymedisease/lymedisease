@@ -1,0 +1,171 @@
+---
+title: "Connecticut_County_Monthly_Spacio_Temporal"
+output: html_document
+date: '2022-04-25'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r packages}
+# install.packages("surveillance")
+# install.packages("spdep")
+# install.packages("maps")
+# install.packages("maptools")
+# install.packages("classInt")
+# install.packages("RColorBrewer")
+# 
+# install.packages("rgdal")
+
+
+library(surveillance)
+library(spdep)
+library(maps)
+library(maptools)
+library(classInt)
+library(RColorBrewer)
+library(rgdal)
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+
+# We removed unknown county and totals from the connecticut file
+# https://portal.ct.gov/-/media/DPH/EEIP/Lyme-Disease-Cases-by-County-and-Month_2009-2018_Table.xlsx
+# https://www.counterpointstat.com/uploads/1/1/9/3/119383887/areal.r
+
+
+mn.county = map("county","connecticut", fill=TRUE, plot=FALSE)
+county.ID <- sapply(strsplit(mn.county$names, ","), function(x) x[2])
+mn.poly = map2SpatialPolygons(mn.county, IDs=county.ID)
+
+mn.nb = poly2nb(mn.poly)
+mn.adj.mat = nb2mat(mn.nb, style="B")
+
+mn.county$names
+
+#month = 1:120
+
+# use colnames of county state in observed
+
+county_state_adjmat <- poly2adjmat(mn.poly)
+county_state_nbOrder <- nbOrder(county_state_adjmat, maxlag = 1)
+
+
+colnames = colnames(county_state_nbOrder)
+colnames
+observed = read.csv("connecticut.csv", header=FALSE)
+head(observed)
+
+# Delete first 12 rows for 2009 year as we have only census data from 2010 till 2019.
+observed = observed[13:120,]
+
+#i = c(1:8)
+#observed[ , i] <- apply(observed[ , i], 2, function(x) as.numeric(as.character(x)))
+
+colnames(observed) = colnames
+
+cdcCon = sts(observed, start=c(2009,1), freq=12)
+cdcCon
+
+
+```
+
+```{r}
+plot(cdcCon, type = observed ~ time | unit, same.scale = FALSE, col = "grey")
+f_S1 <- addSeason2formula(f = ~ 1, S = 1, period = 10)
+result0 <- hhh4(cdcCon, control = list(end = list(f = f_S1),
+                                     family = "Poisson"))
+summary(result0)
+
+result1 <- update(result0, family = "NegBin1")
+summary(result1)
+
+result2 <- update(result1, ar = list(f = ~ 1))
+
+summary(result2)
+
+AIC(result0, result1, result2)
+
+
+coef(result2, se = TRUE,    # also return standard errors
+     amplitudeShift = TRUE, # transform sine/cosine coefficients
+     # to amplitude/shift parameters
+     idx2Exp = TRUE)
+
+```
+
+```{r}
+plot(result2)
+
+
+#dfDisprogNb <- sts(month,observed, start = c(2009, 1), frequency = 12, neighbourhood = county_state_nbOrder, map = mn.poly)
+#working
+# Add population to do spatio-temporal analysis and see the effect of surrounding counties on the current county
+#dfDisprogNb <- sts(observed, start = c(2009, 1), frequency = 12, neighbourhood = county_state_nbOrder, map = mn.poly)
+
+
+#census_connecticut_2010_2018.csv
+
+
+popConn = read.csv("census_connecticut_county_2010_2018.csv")
+
+popConn = popConn[ -c(1) ]
+
+popFrac = popConn/100000
+
+colnames(popFrac) = colnames
+
+dfDisprogNb <- sts(observed, start = c(2010, 1), frequency = 12, population = data.matrix(popFrac),
+                   neighbourhood = county_state_nbOrder, map = mn.poly)
+
+
+dfDisprogNb
+
+plot(dfDisprogNb, type = observed ~ time)
+
+plot(dfDisprogNb, type = observed ~ unit,
+     labels = list(font = 2), colorkey = list(space = "right"),
+     sp.layout = layout.scalebar(dfDisprogNb@map, corner = c(0.05, 0.05),
+                                 scale = 10, labels = c("0", "50 km"), height = 0.03))
+
+
+```
+
+```{r adjacentInfluence}
+
+
+districts2plot <- which(colSums(observed) > 50)
+par(mfrow = c(2,4), mar = c(3, 5, 2, 1), las = 1)
+plot(result2, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1)
+plot(result2, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = TRUE) -> fitted_components
+
+
+
+
+```
+
+
+```{r measles}
+data("measlesWeserEms")
+
+head(measlesWeserEms)
+
+measlesWeserEms@populationFrac
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
