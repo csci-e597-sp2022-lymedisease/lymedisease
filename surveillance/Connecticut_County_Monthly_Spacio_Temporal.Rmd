@@ -69,19 +69,16 @@ county_state_nbOrder <- nbOrder(county_state_adjmat, maxlag = 1)
 colnames = colnames(county_state_nbOrder)
 colnames
 observed = read.csv("connecticut.csv", header=FALSE)
-head(observed)
 
 observed[is.na(observed)] = 0
 
-# Delete first 12 rows for 2009 year as we have only census data from 2010 till 2019.
+# Delete first 12 rows for 2009 year as we have only census data from 2010 till 2018.
 observed = observed[13:120,]
-
-#i = c(1:8)
-#observed[ , i] <- apply(observed[ , i], 2, function(x) as.numeric(as.character(x)))
+head(observed)
 
 colnames(observed) = colnames
 
-cdcCon = sts(observed, start=c(2009,1), freq=12)
+cdcCon = sts(observed, start=c(2010,1), freq=12)
 cdcCon
 
 
@@ -179,7 +176,7 @@ districts2plot <- which(colSums(observed) > 50)
 
 par(mfrow = c(2,4), mar = c(3, 1, 2, 1), las = 1)
 
-plot(lymeFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1)
+plot(lymeFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1) -> all_counties
 
 plot(lymeFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = FALSE) -> fitted_components
 
@@ -190,30 +187,202 @@ plot(lymeFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings =
 
 
 ```{r measles}
-data("measlesWeserEms")
+# data("measlesWeserEms")
+# 
+# head(measlesWeserEms)
+# 
+# measlesWeserEms@populationFrac
+# 
+# measlesModel_basic <- list(end = list(f = addSeason2formula(~1 + t, period = measlesWeserEms@freq), offset = population(measlesWeserEms)),
+# ar = list(f = ~1), ne = list(f = ~1, weights = neighbourhood(measlesWeserEms) == 1), family = "NegBin1")
+# 
+# measlesFit_basic <- hhh4(stsObj = measlesWeserEms, control = measlesModel_basic)
+# summary(measlesFit_basic, idx2Exp = TRUE, amplitudeShift = TRUE, maxEV = TRUE)
+# plot(measlesFit_basic, type = "season", components = "end", main = "")
+# 
+# 
+# districts2plot <- which(colSums(observed(measlesWeserEms)) > 50)
+# par(mfrow = c(2,3), mar = c(3, 5, 2, 1), las = 1)
+# plot(measlesFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1)
+# plot(measlesFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = FALSE) -> fitted_components
 
-head(measlesWeserEms)
 
-measlesWeserEms@populationFrac
+# measlesWeserEms@map@data$vacc1.2004
+# 
+# measlesWeserEms@map@data
 
-measlesModel_basic <- list(end = list(f = addSeason2formula(~1 + t, period = measlesWeserEms@freq), offset = population(measlesWeserEms)),
-ar = list(f = ~1), ne = list(f = ~1, weights = neighbourhood(measlesWeserEms) == 1), family = "NegBin1")
-
-measlesFit_basic <- hhh4(stsObj = measlesWeserEms, control = measlesModel_basic)
-summary(measlesFit_basic, idx2Exp = TRUE, amplitudeShift = TRUE, maxEV = TRUE)
-plot(measlesFit_basic, type = "season", components = "end", main = "")
+```
 
 
-districts2plot <- which(colSums(observed(measlesWeserEms)) > 50)
-par(mfrow = c(2,3), mar = c(3, 5, 2, 1), las = 1)
-plot(measlesFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1)
-plot(measlesFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = FALSE) -> fitted_components
+```{r epidemic endemic effect}
+
+# Let's check first five months data
+fitted_components$Overall[1:5,]
+
+# TODO Check why the actual cdc data and the all_counties data are not matching for months starting 13
+all_counties$windham[66:70,]
+
+# Time averaged proportations of the epidemic and endemic values by total disease counts
+
+colSums(fitted_components$Overall)[3:5] / sum(fitted_components$Overall[,1])
+
+colSums(all_counties$`new london`)[3:5] / sum(all_counties$`new london`[,1])
+
+# high neighboring county effect to middlesex as it is between 2 high incidence counties
+colSums(all_counties$middlesex)[3:5] / sum(all_counties$middlesex[,1])
+
+
+
+```
+
+```{r map plots}
+
+cex = 0.8
+par(mfrow = c(2,2), mar = c(3, 5, 2, 1), las = 1)
+# plot(lymeFit_basic, type = "maps", which = c("epi.own", "epi.neighbours", "endemic"), labels = list(cex = cex))
+plot(lymeFit_basic, type = "maps", which = c("epi.own"), labels = list(cex = cex))
+plot(lymeFit_basic, type = "maps", which = c("epi.neighbours"), labels = list(cex = cex))
+plot(lymeFit_basic, type = "maps", which = c("endemic"), labels = list(cex = cex))
+
+
+```
+
+```{r Tweet counts from Bert}
+
+observed = read.csv("connecticutTwts.csv")
+
+observed = observed[-c(1)]
+colnames(observed) = colnames
+
+cdcConTwt = sts(observed, start=c(2010,1), freq=12)
+# cdcConTwt
+
+plot(cdcConTwt, type = observed ~ time | unit, same.scale = FALSE, col = "grey", ylab = 'No. of Tweets')
+
+f_S1Twt <- addSeason2formula(f = ~ 1, S = 1, period = 10)
+result0Twt <- hhh4(cdcConTwt, control = list(end = list(f = f_S1Twt),
+                                     family = "Poisson"))
+summary(result0Twt)
+
+result1Twt <- update(result0Twt, family = "NegBin1")
+summary(result1Twt)
+
+result2Twt <- update(result1Twt, ar = list(f = ~ 1))
+
+summary(result2Twt)
+
+AIC(result0Twt, result1Twt, result2Twt)
+
+
+coef(result2Twt, se = TRUE,    # also return standard errors
+     amplitudeShift = TRUE, # transform sine/cosine coefficients
+     # to amplitude/shift parameters
+     idx2Exp = TRUE)
+
+
+
+
+```
+
+
+```{r}
+
+plot(result0, ylab = 'No. of Tweets')
+plot(result2, ylab = 'No. of Tweets')
+
+popConn = read.csv("census_connecticut_county_2010_2018.csv")
+
+popConn = popConn[ -c(1) ]
+
+popFrac = popConn/100000
+
+colnames(popFrac) = colnames
+
+dfDisprogNb <- sts(observed, start = c(2010, 1), frequency = 12, population = data.matrix(popFrac),
+                   neighbourhood = county_state_nbOrder, map = mn.poly)
+
+
+dfDisprogNb
+
+plot(dfDisprogNb, type = observed ~ time, ylab = 'No. of Tweets')
+
+plot(dfDisprogNb, type = observed ~ unit,
+     labels = list(font = 2), colorkey = list(space = "right"),
+     sp.layout = layout.scalebar(dfDisprogNb@map, corner = c(0.05, 0.05),
+                                 scale = 10, labels = c("0", "50 km"), height = 0.03))
+
+
+```
+
+```{r adjacentInfluence}
+
+
+districts2plot <- which(colSums(observed) > 50)
+par(mfrow = c(3,4), mar = c(3, 5, 2, 1), las = 1)
+plot(result2, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1, ylab = 'No. of Tweets')
+plot(result2, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = TRUE, ylab = 'No. of Tweets') -> fitted_components
 
 
 
 
 
 ```
+
+```{r spatio-temporal-lyme}
+
+lymeModel_basic <- list(end = list(f = addSeason2formula(~1 + t, period = 12), offset = data.matrix(popFrac)),
+ar = list(f = ~1), ne = list(f = ~1, weights = county_state_nbOrder == 1), family = "NegBin1")
+
+lymeFit_basic <- hhh4(stsObj = dfDisprogNb, control = lymeModel_basic)
+summary(lymeModel_basic, idx2Exp = TRUE, amplitudeShift = TRUE, maxEV = TRUE)
+plot(lymeFit_basic, type = "season", components = "end", main = "")
+
+
+districts2plot <- which(colSums(observed) > 50)
+
+par(mfrow = c(2,4), mar = c(3, 1, 2, 1), las = 1)
+
+plot(lymeFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1) -> all_counties
+
+plot(lymeFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = FALSE) -> fitted_components
+
+
+
+```
+
+```{r epidemic endemic effect}
+
+# Let's check first five months data
+fitted_components$Overall[1:5,]
+
+# TODO Check why the actual cdc data and the all_counties data are not matching for months starting 13
+all_counties$windham[66:70,]
+
+# Time averaged proportations of the epidemic and endemic values by total disease counts
+
+colSums(fitted_components$Overall)[3:5] / sum(fitted_components$Overall[,1])
+
+colSums(all_counties$`new london`)[3:5] / sum(all_counties$`new london`[,1])
+
+# high neighboring county effect to middlesex as it is between 2 high incidence counties
+colSums(all_counties$middlesex)[3:5] / sum(all_counties$middlesex[,1])
+
+
+
+```
+
+```{r map plots}
+
+cex = 0.8
+par(mfrow = c(2,2), mar = c(3, 5, 2, 1), las = 1)
+# plot(lymeFit_basic, type = "maps", which = c("epi.own", "epi.neighbours", "endemic"), labels = list(cex = cex))
+plot(lymeFit_basic, type = "maps", which = c("epi.own"), labels = list(cex = cex), xlab = 'Tweets')
+plot(lymeFit_basic, type = "maps", which = c("epi.neighbours"), labels = list(cex = cex), xlab = 'Tweets')
+plot(lymeFit_basic, type = "maps", which = c("endemic"), labels = list(cex = cex), xlab = 'Tweets')
+
+
+```
+
 
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
