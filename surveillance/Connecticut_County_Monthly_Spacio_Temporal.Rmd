@@ -23,6 +23,7 @@ When you click the **Knit** button a document will be generated that includes bo
 # install.packages("maptools")
 # install.packages("classInt")
 # install.packages("RColorBrewer")
+# install.packages("fanplot")
 # 
 # install.packages("rgdal")
 
@@ -34,7 +35,7 @@ library(maptools)
 library(classInt)
 library(RColorBrewer)
 library(rgdal)
-
+library(fanplot)
 
 ```
 
@@ -162,56 +163,144 @@ plot(result2, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL,
 
 ```
 
-```{r spatio-temporal-lyme}
+```{r analysis without twitter}
 
-lymeModel_basic <- list(end = list(f = addSeason2formula(~1 + t, period = 12), offset = data.matrix(popFrac)),
-ar = list(f = ~1), ne = list(f = ~1, weights = county_state_nbOrder == 1), family = "NegBin1")
+pred <- oneStepAhead(result2, nrow(observed)-5, type="rolling", which.start="final", verbose=FALSE)
+pred
+quantile(pred)
+confint(pred)
 
-lymeFit_basic <- hhh4(stsObj = dfDisprogNb, control = lymeModel_basic)
-summary(lymeModel_basic, idx2Exp = TRUE, amplitudeShift = TRUE, maxEV = TRUE)
-plot(lymeFit_basic, type = "season", components = "end", main = "")
+## simple plot of the 80% one-week-ahead prediction interval
+## and point forecasts
+if (requireNamespace("fanplot"))
+    plot(pred, probs = c(.1,.9), means.args = list())
+
+
+## note: oneStepAhead(..., type="final") just means fitted values
+stopifnot(identical(
+    unname(oneStepAhead(result2, nrow(observed)-5, type="final")$pred),
+    unname(tail(fitted(result2), 5))))
+
+
+## compute scores of the one-step-ahead predictions
+(sc <- scores(pred))
+
+## the above uses the scores-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+# scores(x = pred$observed, mu = pred$pred, size = exp(pred$psi))
+
+## scores with respect to the fitted values are similar
+(scFitted <- scores(result2, subset = nrow(observed)-(4:0)))
+
+
+
+
+## test if the one-step-ahead predictions are calibrated
+calibrationTest(pred)  # p = 0.8746
+
+## the above uses the calibrationTest-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+calibrationTest(x = pred$observed, mu = pred$pred)
+
+## we can also test calibration of the fitted values
+## using the calibrationTest-method for "hhh4" fits
+calibrationTest(result, subset = nrow(observed)-(4:0))
+
+
+## plot a (non-randomized) PIT histogram for the predictions
+pit(pred)
+
+colMeans(scores(pred, which = c("logs", "rps")))
+
+
+```
+
+
+
+```{r temporal-lyme-tweet}
+
+observedTwt = read.csv("connecticutTwts.csv")
+observedTwt[is.na(observedTwt)] = 0
+
+observedTwt = observedTwt[-c(1)]
+colnames(observedTwt) = colnames
+
+observedTwt = sapply(observedTwt, as.numeric)
+
+t = 12
+f.end <- addSeason2formula(f = ~ 1, S = 1, period = t)
+lymeTwtModel_basic <- list(ar = list(f = ~1 + observedTwt), end = list(f = f.end),
+ data = list(t = epoch(dfDisprogNb), observedTwt = observedTwt))
+
+lymeTwtFit_basic <- hhh4(stsObj = dfDisprogNb, control = lymeTwtModel_basic)
+summary(lymeTwtModel_basic, idx2Exp = TRUE, amplitudeShift = TRUE, maxEV = TRUE)
+plot(lymeTwtFit_basic, type = "season", components = "end", main = "")
 
 
 districts2plot <- which(colSums(observed) > 50)
 
 par(mfrow = c(2,4), mar = c(3, 1, 2, 1), las = 1)
 
-plot(lymeFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1) -> all_counties
+plot(lymeTwtFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1) -> all_counties
 
-plot(lymeFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = FALSE) -> fitted_components
-
-
+plot(lymeTwtFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = FALSE) -> fitted_components
 
 ```
 
+```{r Statistical Tests}
+
+pred <- oneStepAhead(lymeTwtFit_basic, nrow(observed)-5, type="rolling", which.start="final", verbose=FALSE)
+pred
+quantile(pred)
+confint(pred)
+
+## simple plot of the 80% one-week-ahead prediction interval
+## and point forecasts
+if (requireNamespace("fanplot"))
+    plot(pred, probs = c(.1,.9), means.args = list())
 
 
-```{r measles}
-# data("measlesWeserEms")
-# 
-# head(measlesWeserEms)
-# 
-# measlesWeserEms@populationFrac
-# 
-# measlesModel_basic <- list(end = list(f = addSeason2formula(~1 + t, period = measlesWeserEms@freq), offset = population(measlesWeserEms)),
-# ar = list(f = ~1), ne = list(f = ~1, weights = neighbourhood(measlesWeserEms) == 1), family = "NegBin1")
-# 
-# measlesFit_basic <- hhh4(stsObj = measlesWeserEms, control = measlesModel_basic)
-# summary(measlesFit_basic, idx2Exp = TRUE, amplitudeShift = TRUE, maxEV = TRUE)
-# plot(measlesFit_basic, type = "season", components = "end", main = "")
-# 
-# 
-# districts2plot <- which(colSums(observed(measlesWeserEms)) > 50)
-# par(mfrow = c(2,3), mar = c(3, 5, 2, 1), las = 1)
-# plot(measlesFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1)
-# plot(measlesFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = FALSE) -> fitted_components
+## note: oneStepAhead(..., type="final") just means fitted values
+stopifnot(identical(
+    unname(oneStepAhead(result2, nrow(observed)-5, type="final")$pred),
+    unname(tail(fitted(result2), 5))))
 
 
-# measlesWeserEms@map@data$vacc1.2004
+## compute scores of the one-step-ahead predictions
+(sc <- scores(pred))
+
+## the above uses the scores-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+# scores(x = pred$observed, mu = pred$pred, size = exp(pred$psi))
+
+## scores with respect to the fitted values are similar
+(scFitted <- scores(result2, subset = nrow(observed)-(4:0)))
+
+
+
+
+## test if the one-step-ahead predictions are calibrated
+calibrationTest(pred)  # p = 0.8746
+
+## the above uses the calibrationTest-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+calibrationTest(x = pred$observed, mu = pred$pred)
+
+## we can also test calibration of the fitted values
+## using the calibrationTest-method for "hhh4" fits
+calibrationTest(result, subset = nrow(observed)-(4:0))
+
+
+## plot a (non-randomized) PIT histogram for the predictions
+pit(pred)
 # 
-# measlesWeserEms@map@data
+# ## the above uses the pit-method for "oneStepAhead" predictions,
+# ## which is a simple wrapper around the default method:
+# pit(x = pred$observed, pdistr = "pnbinom", mu = pred$pred)
+# 
 
 ```
+
 
 
 ```{r epidemic endemic effect}
@@ -337,6 +426,7 @@ lymeFit_basic <- hhh4(stsObj = dfDisprogNb, control = lymeModel_basic)
 summary(lymeModel_basic, idx2Exp = TRUE, amplitudeShift = TRUE, maxEV = TRUE)
 plot(lymeFit_basic, type = "season", components = "end", main = "")
 
+print(paste("lymeFit_basic AIC:", AIC(lymeFit_basic)))
 
 districts2plot <- which(colSums(observed) > 50)
 
@@ -383,6 +473,73 @@ plot(lymeFit_basic, type = "maps", which = c("endemic"), labels = list(cex = cex
 
 ```
 
+```{r hhh4 validation}
+
+# ## generate formula for temporal and seasonal trends
+# f.end <- addSeason2formula(~1 + t, S=1, period=52)
+# model <- list(ar = list(f = ~1), end = list(f = f.end), family = "NegBin1")
+# ## fit the model
+# result <- hhh4(salmonella, model)
+
+observed = read.csv("connecticut.csv", header=FALSE)
+observed[is.na(observed)] = 0
+# Delete first 12 rows for 2009 year as we have only census data from 2010 till 2018.
+observed = observed[13:120,]
+colnames(observed) = colnames
+
+
+## do sequential one-step-ahead predictions for the last 5 weeks
+pred <- oneStepAhead(result2, nrow(observed)-5, type="rolling", which.start="final", verbose=FALSE)
+pred
+quantile(pred)
+confint(pred)
+
+## simple plot of the 80% one-week-ahead prediction interval
+## and point forecasts
+if (requireNamespace("fanplot"))
+    plot(pred, probs = c(.1,.9), means.args = list())
+
+
+## note: oneStepAhead(..., type="final") just means fitted values
+stopifnot(identical(
+    unname(oneStepAhead(result2, nrow(observed)-5, type="final")$pred),
+    unname(tail(fitted(result2), 5))))
+
+
+## compute scores of the one-step-ahead predictions
+(sc <- scores(pred))
+
+## the above uses the scores-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+# scores(x = pred$observed, mu = pred$pred, size = exp(pred$psi))
+
+## scores with respect to the fitted values are similar
+(scFitted <- scores(result2, subset = nrow(observed)-(4:0)))
+
+
+
+
+## test if the one-step-ahead predictions are calibrated
+calibrationTest(pred)  # p = 0.8746
+
+## the above uses the calibrationTest-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+calibrationTest(x = pred$observed, mu = pred$pred, size = exp(pred$psi))
+
+## we can also test calibration of the fitted values
+## using the calibrationTest-method for "hhh4" fits
+calibrationTest(result, subset = nrow(salmonella)-(4:0))
+
+
+## plot a (non-randomized) PIT histogram for the predictions
+pit(pred)
+
+## the above uses the pit-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+pit(x = pred$observed, pdistr = "pnbinom", mu = pred$pred, size = exp(pred$psi))
+
+
+```
 
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

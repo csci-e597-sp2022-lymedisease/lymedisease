@@ -1,0 +1,208 @@
+---
+title: "ConnecticutLymeTwitterTemportal"
+output:
+  pdf_document: default
+  html_document: default
+date: '2022-05-01'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r packages}
+# https://cran.r-project.org/web/packages/surveillance/vignettes/hhh4_spacetime.pdf
+
+# install.packages("surveillance")
+# install.packages("spdep")
+# install.packages("maps")
+# install.packages("maptools")
+# install.packages("classInt")
+# install.packages("RColorBrewer")
+# install.packages("fanplot")
+# 
+# install.packages("rgdal")
+
+
+library(surveillance)
+library(spdep)
+library(maps)
+library(maptools)
+library(classInt)
+library(RColorBrewer)
+library(rgdal)
+library(fanplot)
+
+```
+
+```{r data}
+
+observed = read.csv("connecticut.csv", header=FALSE)
+
+observed[is.na(observed)] = 0
+
+# Delete first 12 rows for 2009 year as we have only census data from 2010 till 2018.
+observed = observed[13:120,]
+head(observed)
+
+mycounty = map("county","connecticut", fill=TRUE, plot=FALSE)
+county.ID <- sapply(strsplit(mycounty$names, ","), function(x) x[2])
+mypoly = map2SpatialPolygons(mycounty, IDs=county.ID)
+county_adjmat <- poly2adjmat(mypoly)
+county_nbOrder <- nbOrder(county_adjmat, maxlag = 1)
+colnames = colnames(county_nbOrder)
+colnames(observed) = colnames
+
+cdcCon = sts(observed, start=c(2010,1), freq=12)
+cdcCon
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r temporal model}
+
+plot(cdcCon, type = observed ~ time | unit, same.scale = FALSE, col = "grey")
+f_S1 <- addSeason2formula(f = ~ 1, S = 1, period = 10)
+negBinModel <- hhh4(cdcCon, control = list(end = list(f = f_S1),
+                                     family = "NegBin1"))
+summary(poiModel)
+
+possnModel <- update(negBinModel, family = "Poisson")
+summary(possnModel)
+
+ar1Model <- update(negBinModel, ar = list(f = ~ 1))
+
+summary(ar1Model)
+
+AIC(possnModel, negBinModel, ar1Model)
+
+
+coef(ar1Model, se = TRUE,    # also return standard errors
+     amplitudeShift = TRUE, # transform sine/cosine coefficients
+     # to amplitude/shift parameters
+     idx2Exp = TRUE)
+
+
+```
+
+```{r population for spatial analysis}
+
+popConn = read.csv("census_connecticut_county_2010_2018.csv")
+
+popConn = popConn[ -c(1) ]
+
+popFrac = popConn/100000
+
+colnames(popFrac) = colnames
+
+dfDisprogNb <- sts(observed, start = c(2010, 1), frequency = 12, population = data.matrix(popFrac),
+                   neighbourhood = county_state_nbOrder, map = mn.poly)
+
+```
+
+
+```{r spatial-temporal-lyme-tweet}
+
+observedTwt = read.csv("connecticutTwts.csv")
+observedTwt[is.na(observedTwt)] = 0
+
+observedTwt = observedTwt[-c(1)]
+colnames(observedTwt) = colnames
+
+observedTwt = sapply(observedTwt, as.numeric)
+
+t = 12
+f.end <- addSeason2formula(f = ~ 1, S = 1, period = t)
+lymeTwtModel_basic <- list(ar = list(f = ~1 + observedTwt), ne = list(f = ~1, weights = county_state_nbOrder == 1), end = list(f = f.end),
+ data = list(t = epoch(dfDisprogNb), observedTwt = observedTwt))
+
+lymeTwtFit_basic <- hhh4(stsObj = dfDisprogNb, control = lymeTwtModel_basic)
+summary(lymeTwtModel_basic, idx2Exp = TRUE, amplitudeShift = TRUE, maxEV = TRUE)
+plot(lymeTwtFit_basic, type = "season", components = "end", main = "")
+
+
+districts2plot <- which(colSums(observed) > 50)
+
+par(mfrow = c(2,4), mar = c(3, 1, 2, 1), las = 1)
+
+plot(lymeTwtFit_basic, type = "fitted", units = districts2plot, hide0s = TRUE, par.settings = NULL, legend = 1) -> all_counties
+
+plot(lymeTwtFit_basic, type = "fitted", total = TRUE, hide0s = TRUE, par.settings = NULL, legend = FALSE) -> fitted_components
+
+
+
+
+```
+
+
+```{r Statistical Tests}
+
+pred <- oneStepAhead(lymeTwtFit_basic, nrow(observed)-5, type="rolling", which.start="final", verbose=FALSE)
+pred
+quantile(pred)
+confint(pred)
+
+## simple plot of the 80% one-week-ahead prediction interval
+## and point forecasts
+if (requireNamespace("fanplot"))
+    plot(pred, probs = c(.1,.9), means.args = list())
+
+
+## note: oneStepAhead(..., type="final") just means fitted values
+stopifnot(identical(
+    unname(oneStepAhead(result2, nrow(observed)-5, type="final")$pred),
+    unname(tail(fitted(result2), 5))))
+
+
+## compute scores of the one-step-ahead predictions
+(sc <- scores(pred))
+
+## the above uses the scores-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+# scores(x = pred$observed, mu = pred$pred, size = exp(pred$psi))
+
+## scores with respect to the fitted values are similar
+(scFitted <- scores(lymeTwtFit_basic, subset = nrow(observed)-(4:0)))
+
+
+
+
+## test if the one-step-ahead predictions are calibrated
+calibrationTest(pred)  # p = 0.8746
+
+## the above uses the calibrationTest-method for "oneStepAhead" predictions,
+## which is a simple wrapper around the default method:
+calibrationTest(x = pred$observed, mu = pred$pred)
+
+## we can also test calibration of the fitted values
+## using the calibrationTest-method for "hhh4" fits
+calibrationTest(lymeTwtFit_basic, subset = nrow(observed)-(4:0))
+
+
+## plot a (non-randomized) PIT histogram for the predictions
+pit(pred)
+# 
+# ## the above uses the pit-method for "oneStepAhead" predictions,
+# ## which is a simple wrapper around the default method:
+# pit(x = pred$observed, pdistr = "pnbinom", mu = pred$pred)
+# 
+
+
+colMeans(scores(pred, which = c("logs", "rps")))
+
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
