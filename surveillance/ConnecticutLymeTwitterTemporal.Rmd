@@ -28,7 +28,12 @@ When you click the **Knit** button a document will be generated that includes bo
 # install.packages("fanplot")
 # 
 # install.packages("rgdal")
-
+# 
+# install.packages("dplyr")
+# install.packages("UScensus2000tract")
+# install.packages("spatialreg")
+# install.packages("Matrix")
+# install.packages("caret")
 
 library(surveillance)
 library(spdep)
@@ -38,6 +43,14 @@ library(classInt)
 library(RColorBrewer)
 library(rgdal)
 library(fanplot)
+library(spatialreg)
+library(Matrix)
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(stringr)
+library(UScensus2000tract)
+# library(caret)
 
 ```
 
@@ -202,7 +215,235 @@ pit(pred)
 colMeans(scores(pred, which = c("logs", "rps")))
 
 
+
 ```
+
+
+```{r florida income moran i test}
+# https://mgimond.github.io/simple_moransI_example/
+
+s <- readRDS(url("https://github.com/mgimond/Data/raw/gh-pages/Exercises/nhme.rds"))
+
+names(s)
+
+s$Income
+
+
+tm_shape(s) + tm_fill(col="Income", style="quantile", n=8, palette="Greens") +  tm_legend(outside=TRUE)
+
+nb <- poly2nb(s, queen=TRUE)
+
+lw <- nb2listw(nb, style="W", zero.policy=TRUE)
+
+lw$weights[1]
+
+I <- moran(s$Income, lw, length(nb), Szero(lw))[1]
+I
+
+moran.test(s$Income,lw, alternative="greater")
+
+MC<- moran.mc(s$Income, lw, nsim=999, alternative="greater")
+MC
+
+plot(MC)
+
+set.seed(111)
+s$rand1 <- sample(s$Income, length(s$Income), replace = FALSE)
+s$rand2 <- sample(s$Income, length(s$Income), replace = FALSE)
+s$rand3 <- sample(s$Income, length(s$Income), replace = FALSE)
+
+tm_shape(s) + tm_fill(col=c("Income", "rand1", "rand2", "rand3"),
+                      style="quantile", n=8, palette="Greens", legend.show = FALSE) +
+              tm_facets( nrow=1)
+
+
+```
+
+
+
+```{r MORON I Test Lyme Twtr Count}
+
+mycounty = map("county","connecticut", fill=TRUE, plot=FALSE)
+county.ID <- sapply(strsplit(mycounty$names, ","), function(x) x[2])
+mypoly = map2SpatialPolygons(mycounty, IDs=county.ID)
+nb = poly2nb(mypoly, queen=TRUE)
+lw <- nb2listw(nb, style="W", zero.policy=TRUE)
+
+I <- moran(observedTwt[108,], lw, length(nb), Szero(lw))[1]
+I
+
+moran.test(observedTwt[108,],lw, alternative="greater")
+
+
+
+```
+
+```{r MORON I Test Lyme Disease Count}
+
+mycounty = map("county","connecticut", fill=TRUE, plot=FALSE)
+county.ID <- sapply(strsplit(mycounty$names, ","), function(x) x[2])
+mypoly = map2SpatialPolygons(mycounty, IDs=county.ID)
+nb = poly2nb(mypoly, queen=TRUE)
+lw <- nb2listw(nb, style="W", zero.policy=TRUE)
+
+I <- moran(as.numeric(observed[108,]), lw, length(nb), Szero(lw))[1]
+I
+
+moran.test(as.numeric(observed[108,]),lw, alternative="greater")
+
+
+
+```
+
+```{r Bivariate Moran-I}
+#https://stackoverflow.com/questions/45177590/map-of-bivariate-spatial-correlation-in-r-bivariate-lisa
+
+
+#======================================================
+# load data
+data("oregon.tract")
+
+# Variables to use in the correlation: white and black population in each census track
+x <- oregon.tract$white
+y <- oregon.tract$black
+
+#======================================================
+# Programming some functions
+
+# Bivariate Moran's I
+moran_I <- function(x, y = NULL, W){
+        if(is.null(y)) y = x
+
+        xp <- x #(x - mean(x, na.rm=T))/sd(x, na.rm=T)
+        yp <- y #(y - mean(y, na.rm=T))/sd(y, na.rm=T)
+        print(paste("xp",xp))
+        print(paste("yp",yp))
+        W[which(is.na(W))] <- 0
+        n <- nrow(W)
+
+        global <- (xp%*%W%*%yp)/(n - 1)
+        local  <- (xp*W%*%yp)
+
+        list(global = global, local  = as.numeric(local))
+}
+
+
+# Permutations for the Bivariate Moran's I
+simula_moran <- function(x, y = NULL, W, nsims = 1000){
+
+        if(is.null(y)) y = x
+
+        n   = nrow(W)
+        IDs = 1:n
+
+        xp <- (x - mean(x, na.rm=T))/sd(x, na.rm=T)
+        W[which(is.na(W))] <- 0
+
+        global_sims = NULL
+        local_sims  = matrix(NA, nrow = n, ncol=nsims)
+
+        ID_sample = sample(IDs, size = n*nsims, replace = T)
+
+        y_s = y[ID_sample]
+        y_s = matrix(y_s, nrow = n, ncol = nsims)
+        y_s <- (y_s - apply(y_s, 1, mean))/apply(y_s, 1, sd)
+
+        global_sims  <- as.numeric( (xp%*%W%*%y_s)/(n - 1) )
+        local_sims  <- (xp*W%*%y_s)
+
+        list(global_sims = global_sims,
+             local_sims  = local_sims)
+}
+
+
+#======================================================
+# Adjacency Matrix (Queen)
+
+nb <- poly2nb(oregon.tract)
+lw <- nb2listw(nb, style = "B", zero.policy = T)
+W  <- as(lw, "symmetricMatrix")
+W  <- as.matrix(W/rowSums(W))
+W[which(is.na(W))] <- 0
+
+#======================================================
+# Calculating the index and its simulated distribution
+# for global and local values
+
+m   <- moran_I(x, y, W)
+m[[1]] # global value
+
+m_i <- m[[2]]  # local values
+
+local_sims <- simula_moran(x, y, W)$local_sims
+
+# Identifying the significant values 
+alpha <- .05  # for a 95% confidence interval
+probs <- c(alpha/2, 1-alpha/2)
+intervals <- t( apply(local_sims, 1, function(x) quantile(x, probs=probs)))
+sig        <- ( m_i < intervals[,1] )  | ( m_i > intervals[,2] )
+
+#======================================================
+# Preparing for plotting
+
+oregon.tract     <- st_as_sf(oregon.tract)
+oregon.tract$sig <- sig
+
+
+# Identifying the LISA patterns
+xp <- (x-mean(x))/sd(x)
+yp <- (y-mean(y))/sd(y)
+
+patterns <- as.character( interaction(xp > 0, W%*%yp > 0) ) 
+patterns <- patterns %>% 
+        str_replace_all("TRUE","High") %>% 
+        str_replace_all("FALSE","Low")
+patterns[oregon.tract$sig==0] <- "Not significant"
+oregon.tract$patterns <- patterns
+
+
+# Plotting
+ggplot() + geom_sf(data=oregon.tract, aes(fill=patterns), color="NA") +
+        scale_fill_manual(values = c("red", "pink", "light blue", "dark blue", "grey95")) + 
+        theme_minimal()
+
+
+
+```
+
+```{r connecticut Moran I spatial polygon}
+
+# data("connecticut.tract")
+
+i = 103 #103
+t1 = c(as.numeric(observed[i,]))
+x = t1/max(t1)
+
+t2 = c(as.numeric(observedTwt[i,]))
+y = t2/max(t2) #observedTwt[108,]
+
+
+# mynb = poly2nb(mypoly)
+
+mynb <- poly2nb(mypoly)
+lw <- nb2listw(mynb, style = "B", zero.policy = T)
+W  <- as(lw, "symmetricMatrix")
+W  <- as.matrix(W/rowSums(W))
+W[which(is.na(W))] <- 0
+
+m   <- moran_I(x, y, W)
+
+m_i <- m[[2]]
+local_sims <- simula_moran(x, y, W)$local_sims
+
+alpha <- .05  # for a 95% confidence interval
+probs <- c(alpha/2, 1-alpha/2)
+intervals <- t( apply(local_sims, 1, function(x) quantile(x, probs=probs)))
+sig        <- ( m_i < intervals[,1] )  | ( m_i > intervals[,2] )
+print(m[[1]]) # global value
+sig
+
+```
+
 
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
