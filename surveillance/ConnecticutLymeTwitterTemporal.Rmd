@@ -412,9 +412,17 @@ ggplot() + geom_sf(data=oregon.tract, aes(fill=patterns), color="NA") +
 
 ```{r connecticut Moran I spatial polygon}
 
-# data("connecticut.tract")
+# https://gist.github.com/rafapereirabr/5348193abf779625f5e8c5090776a228
 
-i = 103 #103
+# data("connecticut.tract")
+observed = read.csv("connecticut.csv", header=FALSE)
+
+observed[is.na(observed)] = 0
+
+# Delete first 12 rows for 2009 year as we have only census data from 2010 till 2018.
+observed = observed[13:120,]
+
+i = 102-36-12 #103
 t1 = c(as.numeric(observed[i,]))
 x = t1/max(t1)
 
@@ -442,8 +450,52 @@ sig        <- ( m_i < intervals[,1] )  | ( m_i > intervals[,2] )
 print(m[[1]]) # global value
 sig
 
+global_sims <- simula_moran(x, y, W)$global_sims
+global_moran <- m[[1]][1]
+
+moran_pvalue <- sum(abs(global_sims) > abs( global_moran )) / length(global_sims)
+moran_pvalue
+
 ```
 
+```{r}
+
+# Convert shape file into sf object
+map_sf     <- st_as_sf(mypoly)
+map_sf$sig <- sig
+
+
+# Identifying the LISA clusters
+xp <- scale(x)[,1]
+yp <- scale(y)[,1]
+
+
+patterns <- as.character( interaction(xp > 0, W%*%yp > 0) )
+patterns <- patterns %>% 
+str_replace_all("TRUE","High") %>% 
+str_replace_all("FALSE","Low")
+
+patterns[map_sf$sig==0] <- "Not significant"
+map_sf$patterns <- patterns
+
+
+# Rename LISA clusters
+map_sf$patterns2 <- factor(map_sf$patterns, levels=c("High.High", "High.Low", "Low.High", "Low.Low", "Not significant"),
+                                labels=c("High case - High Tweets", "High cases - Low Tweets", "Low cases - High Tweets","Low cases - Low Tweets", "Not significant"))
+  
+
+
+  
+
+### PLOT
+
+ggplot() +
+  geom_sf(data=map_sf, aes(fill=patterns2), color="NA") +
+  scale_fill_manual(values = c("red", "pink", "light blue", "dark blue", "grey80")) + 
+  guides(fill = guide_legend(title="LISA clusters")) +
+  theme_minimal()
+
+```
 
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
